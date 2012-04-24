@@ -25,4 +25,4 @@ requires:
   File::Find: 0
   File::Spec: 0
   Math::BigInt: 0
-version: 0.3
+version: 0.4_0001
