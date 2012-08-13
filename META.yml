@@ -3,9 +3,6 @@ abstract: 'Provides a braindead tarball builder thingie'
 author:
   - 'Erin Schoenhals <erin@cpanel.net>'
 build_requires:
-  IPC::Pipeline: 0.4
-  Test::Exception: 0.26
-  Test::NoWarnings: 0.081
   Test::Simple: 0.44
 configure_requires:
   ExtUtils::MakeMaker: 0
@@ -25,4 +22,4 @@ requires:
   File::Find: 0
   File::Spec: 0
   Math::BigInt: 0
-version: 0.5
+version: 0.6_2012080801

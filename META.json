@@ -22,9 +22,6 @@
    "prereqs" : {
       "build" : {
          "requires" : {
-            "IPC::Pipeline" : "0.4",
-            "Test::Exception" : "0.26",
-            "Test::NoWarnings" : "0.081",
             "Test::Simple" : "0.44"
          }
       },
@@ -42,6 +39,6 @@
          }
       }
    },
-   "release_status" : "stable",
-   "version" : "0.5"
+   "release_status" : "testing",
+   "version" : "0.6_2012080801"
 }
