@@ -39,6 +39,6 @@
          }
       }
    },
-   "release_status" : "testing",
-   "version" : "0.6_2012080801"
+   "release_status" : "stable",
+   "version" : "0.6"
 }
