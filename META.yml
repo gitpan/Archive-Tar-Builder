@@ -17,9 +17,5 @@ no_index:
   directory:
     - t
     - inc
-requires:
-  Digest::SHA1: 0
-  File::Find: 0
-  File::Spec: 0
-  Math::BigInt: 0
-version: 0.6
+requires: {}
+version: 0.7

@@ -31,14 +31,9 @@
          }
       },
       "runtime" : {
-         "requires" : {
-            "Digest::SHA1" : 0,
-            "File::Find" : 0,
-            "File::Spec" : 0,
-            "Math::BigInt" : 0
-         }
+         "requires" : {}
       }
    },
    "release_status" : "stable",
-   "version" : "0.6"
+   "version" : "0.7"
 }
