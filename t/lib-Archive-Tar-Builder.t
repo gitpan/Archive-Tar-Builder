@@ -20,7 +20,7 @@ use Symbol     ();
 
 use Archive::Tar::Builder ();
 
-use Test::More ( 'tests' => 50 );
+use Test::More ( 'tests' => 53 );
 
 sub find_tar {
     my @PATHS    = qw( /bin /usr/bin /usr/local/bin );
@@ -520,4 +520,94 @@ SKIP: {
     $expected_symlink =~ s/^\///;
 
     ok( $FOUND{$expected_symlink}, '$archive->archive() properly encoded a symlink' );
+}
+
+# Case 74517 - LongLink blocks were being written with origin path rather than member name, causing
+#              archive_as not to work as expected once the member name exceeded a certain length
+#              (long enough to trigger use of LongLink).
+{
+    ## semantics of the test...
+
+    # The specific failure was seen at length 156 and up, but why not test a lot more than that for the heck of it?
+    my @test_range = 1 .. 5_000;
+    my @t_in = map { [ '/etc/fstab', ( "X" x $_ ) ] } @test_range;
+    my %t_out;
+    my @expect_t_out = map { "X" x $_ } @test_range;
+
+    go_74517();    # reads @t_in and alters %t_out
+
+    my @failed_lengths;
+    for (@test_range) {
+        my $f = "X" x $_;
+        unless ( $t_out{$f} || $t_out{"$f/"} ) {
+            push @failed_lengths, $_;
+        }
+    }
+    is_deeply \@failed_lengths, [], "all " . @test_range . " member_name lengths tested were successful"
+      or note explain "failed the following lengths: @failed_lengths";
+
+    ## mechanics of the test...
+    sub go_74517 {
+        $SIG{CHLD} = sub { waitpid -1, 0 };
+        pipe my ($atb_rd), my ($atb_wr);
+        pipe my ($tar_rd), my ($tar_wr);
+        if ( my $child = fork ) {
+            close $atb_wr;
+            if ( my $tar = fork ) {
+                close $tar_wr;
+                while (<$tar_rd>) {
+                    chomp;
+                    $t_out{$_} = 1;
+                }
+            }
+            elsif ( defined $tar ) {
+                open( STDIN,  '<&=' . fileno($atb_rd) );
+                open( STDOUT, '>&=' . fileno($tar_wr) );
+                exec 'tar', 'tf', '-';
+            }
+            else { die "fork: $!" }
+        }
+        elsif ( defined $child ) {
+            my $atb = Archive::Tar::Builder->new;
+            $atb->set_handle($atb_wr);
+            for (@t_in) {
+                $atb->archive_as(@$_);
+            }
+            $atb->finish;
+            close($atb_wr);
+            exit;
+        }
+        else { die "fork: $!" }
+    }
+}
+
+# Case 74781: Files with length [100,156] were being included with a trailing
+# slash, causing them to be unpacked as directories in some cases.
+{
+    my $tmp = File::Temp::tempdir( 'CLEANUP' => 1 );
+    mkdir("$tmp/a");
+    mkdir("$tmp/b");
+    my @files = map { "X" x $_ } 1 .. 255;
+
+    foreach my $name (@files) {
+        open( my $fh, ">", "$tmp/a/$name" );
+        print {$fh} $name;
+        close($fh);
+    }
+
+    my $tarfile = "$tmp/file.tar";
+    open( my $atb_wr, ">", $tarfile );
+    my $atb = Archive::Tar::Builder->new;
+    $atb->set_handle($atb_wr);
+    $atb->archive_as( "$tmp/a/$_", $_ ) for @files;
+    $atb->finish;
+    close($atb_wr);
+
+    my $cwd = Cwd::getcwd();
+    chdir("$tmp/b");
+    my $wait = system("tar -xf $tarfile >/dev/null 2>&1");
+    is( $wait, 0, "tar file unarchived successfully" );
+    my $diff_output = `diff -r $tmp/a $tmp/b`;
+    is( $diff_output, "", "no diff output" );
+    chdir($cwd);
 }
