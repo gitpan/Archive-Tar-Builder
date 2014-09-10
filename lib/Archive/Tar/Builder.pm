@@ -19,7 +19,7 @@ BEGIN {
     use vars qw(@ISA $VERSION);
 
     our @ISA     = qw(Exporter);
-    our $VERSION = '1.6';
+    our $VERSION = '1.7_0001';
 }
 
 XSLoader::load( 'Archive::Tar::Builder', $VERSION );
@@ -177,9 +177,13 @@ C<ignore_errors> is not enabled.  Finally, reset any other error data present.
 
 =back
 
+=head1 AUTHOR
+
+Written by Xan Tronix <xan@cpan.org>
+
 =head1 COPYRIGHT
 
-Copyright (c) 2012, cPanel, Inc.
+Copyright (c) 2014, cPanel, Inc.
 All rights reserved.
 http://cpanel.net/
 
