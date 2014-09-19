@@ -10,19 +10,21 @@ package Archive::Tar::Builder;
 use strict;
 use warnings;
 
-use Exporter ();
 use XSLoader ();
 
 use Archive::Tar::Builder::UserCache ();
 
-BEGIN {
-    use vars qw(@ISA $VERSION);
-
-    our @ISA     = qw(Exporter);
-    our $VERSION = '1.7_0002';
-}
+our $VERSION = '1.7_0003';
 
 XSLoader::load( 'Archive::Tar::Builder', $VERSION );
+
+sub archive {
+    my ( $self, @members ) = @_;
+
+    die('No paths to archive specified') unless @members;
+
+    return $self->archive_as( map { $_ => $_ } @members );
+}
 
 __END__
 
@@ -67,6 +69,11 @@ cause Archive::Tar::Builder to die() at the end of the stream.
 =item C<follow_symlinks>
 
 When set, symlinks encountered while archiving are followed.
+
+=item C<gnu_extensions>
+
+When set, support for arbitrarily long pathnames is enabled using the GNU
+LongLink format.
 
 =back
 
@@ -180,6 +187,16 @@ C<ignore_errors> is not enabled.  Finally, reset any other error data present.
 =head1 AUTHOR
 
 Written by Xan Tronix <xan@cpan.org>
+
+=head1 CONTRIBUTORS
+
+=over
+
+=item Rikus Goodell <rikus.goodell@cpanel.net>
+
+=item Brian Carlson <brian.carlson@cpanel.net>
+
+=back
 
 =head1 COPYRIGHT
 

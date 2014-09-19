@@ -20,21 +20,48 @@ use Symbol     ();
 
 use Archive::Tar::Builder ();
 
-use Test::More tests => 56;
+use Test::More tests => 58;
+use Test::Exception;
 
 sub find_tar {
-    my @PATHS    = qw( /bin /usr/bin /usr/local/bin );
-    my @PROGRAMS = qw( bsdtar tar gtar );
+    my @PATH     = qw( /usr/local/bin /usr/bin /bin );
+    my @PROGRAMS = qw( gtar ustar star bsdtar tar );
 
-    foreach my $path (@PATHS) {
-        foreach my $program (@PROGRAMS) {
-            my $name = "$path/$program";
+    foreach my $program (@PROGRAMS) {
+        foreach my $dir (@PATH) {
+            my $name = "$dir/$program";
 
             return $name if -x $name;
         }
     }
 
     die('Could not locate a tar binary');
+}
+
+sub is_bsd_tar {
+    my ($tar) = @_;
+    my $is_bsd_tar = 0;
+
+    open( my $in,  '<', '/dev/null' ) or die("Unable to open /dev/null for reading: $!");
+    open( my $out, '>', '/dev/null' ) or die("Unable to open /dev/null for writing: $!");
+
+    my $err = Symbol::gensym();
+
+    my $pid = IPC::Open3::open3( $in, $out, $err, $tar, '--help' );
+
+    close $in;
+    close $out;
+
+    while ( my $line = readline($err) ) {
+        chomp $line;
+        $is_bsd_tar = 1 if $line =~ /^usage: tar .*crtux/;
+    }
+
+    close $err;
+
+    waitpid( $pid, 0 ) or die("Unable to waitpid() on $pid: $!");
+
+    return $is_bsd_tar;
 }
 
 sub find_unused_ids {
@@ -187,31 +214,27 @@ SKIP: {
     close $in;
 
     my %EXPECTED = map { $_ => 1 } qw(
-      foo/
+      foo
       foo/exclude.txt
-      foo/bar/
-      foo/poop/
-      bar/
+      foo/bar
+      foo/poop
+      bar
       bar/exclude.txt
-      bar/bar/
-      bar/poop/
-      home/prrr/1327342027.M926735P26547V000000000000FD00I0000000001888287_0.one.two.threefour.five.S=2486:2./
+      bar/bar
+      bar/poop
+      home/prrr/1327342027.M926735P26547V000000000000FD00I0000000001888287_0.one.two.threefour.five.S=2486:2.
     );
 
-    my $entries    = scalar keys %EXPECTED;
-    my $found      = 0;
-    my $unexpected = 0;
+    my $entries = scalar keys %EXPECTED;
+    my $found   = 0;
 
     while ( my $line = readline($out) ) {
         chomp $line;
 
-        if ( $EXPECTED{$line} ) {
-            delete $EXPECTED{$line};
-            $found++;
-        }
-        else {
-            $unexpected++;
-        }
+        $line =~ s/^\///;
+        $line =~ s/\/$//;
+
+        $found++ if $EXPECTED{$line};
     }
 
     close $out;
@@ -429,13 +452,13 @@ SKIP: {
 # Test long filenames, symlinks
 {
     my $tmpdir = File::Temp::tempdir( 'CLEANUP' => 1 );
-    my $path = "$tmpdir/" . ( 'foops/' x 50 );
+    my $path = "$tmpdir/" . ( 'foops/' x 30 );
 
     File::Path::mkpath($path) or die("Unable to create long path: $!");
 
     symlink( 'foo', "$tmpdir/bar" ) or die("Unable to symlink() $tmpdir/bar to foo: $!");
 
-    my $archive = Archive::Tar::Builder->new;
+    my $archive = Archive::Tar::Builder->new( 'gnu_extensions' => 1 );
 
     my $err = Symbol::gensym();
 
@@ -458,10 +481,7 @@ SKIP: {
     vec( $rin, fileno($out), 1 ) = 1;
     vec( $rin, fileno($err), 1 ) = 1;
 
-    my %FOUND = (
-        $path         => 0,
-        "$tmpdir/bar" => 0
-    );
+    my %FOUND;
 
     close $in;
 
@@ -495,6 +515,9 @@ SKIP: {
     }
 
     foreach my $item ( split "\n", $paths ) {
+        $item =~ s/^\///;
+        $item =~ s/\/$//;
+
         $FOUND{$item} = 1;
     }
 
@@ -514,19 +537,34 @@ SKIP: {
 
     is( $statuses{$writer_pid} => 0, '$archive->finish() did not die while archiving long pathnames' );
     is( $statuses{$reader_pid} => 0, 'tar -tf - did not die while parsing tar stream with long pathnames' );
-    ok( $FOUND{$path}, "\$archive->finish() properly encoded a long pathname for directory for $path" );
 
-    my $expected_symlink = "$tmpdir/bar";
-    $expected_symlink =~ s/^\///;
+    {
+        my $expected_symlink = "$tmpdir/bar";
+        $expected_symlink =~ s/^\///;
+        $expected_symlink =~ s/\/$//;
 
-    ok( $FOUND{$expected_symlink}, '$archive->archive() properly encoded a symlink' );
+        $path =~ s/^\///;
+        $path =~ s/\/$//;
+
+        my $longest;
+
+        foreach my $item ( keys %FOUND ) {
+            next unless $FOUND{$item};
+            $longest ||= $item;
+            $longest = $item if length($item) > length($longest);
+        }
+
+        ok( $FOUND{$path},             "\$archive->finish() properly encoded a long pathname for directory for $path" );
+        ok( $FOUND{$expected_symlink}, '$archive->archive() properly encoded a symlink' );
+    }
 }
 
 # Case 74517 - LongLink blocks were being written with origin path rather than member name, causing
 #              archive_as not to work as expected once the member name exceeded a certain length
 #              (long enough to trigger use of LongLink).
-{
+SKIP: {
     ## semantics of the test...
+    skip( 'GNU tar unavailable to perform test', 1 ) if is_bsd_tar($tar);
 
     # The specific failure was seen at length 156 and up, but why not test a lot more than that for the heck of it?
     my @test_range = 1 .. 5_000;
@@ -568,13 +606,18 @@ SKIP: {
             else { die "fork: $!" }
         }
         elsif ( defined $child ) {
-            my $atb = Archive::Tar::Builder->new;
+            my $atb = Archive::Tar::Builder->new( 'gnu_extensions' => 1 );
+
             $atb->set_handle($atb_wr);
+
             for (@t_in) {
                 $atb->archive_as(@$_);
             }
+
             $atb->finish;
+
             close($atb_wr);
+
             exit;
         }
         else { die "fork: $!" }
@@ -583,7 +626,9 @@ SKIP: {
 
 # Case 74781: Files with length [100,156] were being included with a trailing
 # slash, causing them to be unpacked as directories in some cases.
-{
+SKIP: {
+    skip( 'GNU tar unavailable to run tests which require LongLink extensions', 2 ) if is_bsd_tar($tar);
+
     my $tmp = File::Temp::tempdir( 'CLEANUP' => 1 );
     mkdir("$tmp/a");
     mkdir("$tmp/b");
@@ -597,7 +642,9 @@ SKIP: {
 
     my $tarfile = "$tmp/file.tar";
     open( my $atb_wr, ">", $tarfile );
-    my $atb = Archive::Tar::Builder->new;
+
+    my $atb = Archive::Tar::Builder->new( 'gnu_extensions' => 1 );
+
     $atb->set_handle($atb_wr);
     $atb->archive_as( "$tmp/a/$_", $_ ) for @files;
     $atb->finish;
@@ -664,12 +711,18 @@ for my $test_mode (
     open( my $atb_wr, ">", $tarfile );
 
     my $ok = eval {
-        my $atb = Archive::Tar::Builder->new;
+        my $atb = Archive::Tar::Builder->new(
+            'gnu_extensions' => 1,
+            'quiet'          => 1
+        );
+
         $atb->set_handle($atb_wr);
         $atb->archive("$tmp/example.txt");
         $atb->finish;
+
         1;
     };
+
     my $atb_error = $@;
 
     close($atb_wr);
@@ -679,13 +732,14 @@ for my $test_mode (
 
     if ( $test_mode == TRUNCATED ) {
 
-        my $atb_died = ( !$ok && $atb_error );
+        my $atb_died          = ( !$ok         && $atb_error );
         my $extract_succeeded = ( $status == 0 && $output =~ /example\.txt/ );
 
         # The "truncated" test is satisfied if either:
         #     1. Archive::Tar::Builder died while creating the archive.
         # or  2. A usable archive was created which includes the file in question.
-        ok $atb_died || $extract_succeeded, "If a file is truncated while it is being read, ATB will die. Otherwise, the resulting archive will be usable." and diag "In this case, the previous test passed because "
+        ok $atb_died || $extract_succeeded,
+          "If a file is truncated while it is being read, ATB will die. Otherwise, the resulting archive will be usable." and diag "In this case, the previous test passed because "
           . (
             $atb_died
             ? "Archive::Tar::Builder died, which was the goal of the test"
@@ -698,7 +752,7 @@ for my $test_mode (
             "for an archive created while a file being archived was %s, archive was extracted successfully",
             $test_mode == NORMAL      ? "completely written"
             : $test_mode == APPENDING ? "appended to as it was being archived"
-            : die
+            :                           die
           ) or diag explain [ $output, `ls -al $tmp` ];
         kill 9, $child2 if $test_mode == TRUNCATED;    # the child in this mode would go on far longer than needed
     }
@@ -711,4 +765,39 @@ for my $test_mode (
         kill 9, $child2;
         waitpid $child2, 0;
     }
+}
+
+#
+# Case 117233: Ensure Archive::Tar::Builder->archive() and archive_as() require
+# 'gnu_extensions' for archiving files with impossibly long names.
+#
+{
+    open my $fh, '>', '/dev/null' or die("Unable to open /dev/null for writing: $!");
+
+    {
+        my $builder = Archive::Tar::Builder->new( 'quiet' => 1 );
+
+        $builder->set_handle($fh);
+
+        throws_ok {
+            $builder->archive_as( '/etc/hosts' => 'BLEH' x 60 );
+        }
+        qr/File name too long/, '$builder->archive_as() croak()s on long filenames without gnu_extensions';
+    }
+
+    {
+        my $builder = Archive::Tar::Builder->new(
+            'quiet'          => 1,
+            'gnu_extensions' => 1
+        );
+
+        $builder->set_handle($fh);
+
+        lives_ok {
+            $builder->archive_as( '/etc/hosts' => 'BLEH' x 60 );
+        }
+        '$builder->archive_as() will NOT croak() on long filenames when gnu_extensions is passed';
+    }
+
+    close $fh;
 }
