@@ -3,6 +3,7 @@ abstract: 'Provides a braindead tarball builder thingie'
 author:
   - 'Erin Schoenhals <erin@cpanel.net>'
 build_requires:
+  Test::Exception: '0'
   Test::Simple: '0.44'
 configure_requires:
   ExtUtils::MakeMaker: '0'
@@ -18,4 +19,4 @@ no_index:
     - t
     - inc
 requires: {}
-version: 1.7_0004
+version: 1.7_0005

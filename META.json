@@ -22,6 +22,7 @@
    "prereqs" : {
       "build" : {
          "requires" : {
+            "Test::Exception" : "0",
             "Test::Simple" : "0.44"
          }
       },
@@ -35,5 +36,5 @@
       }
    },
    "release_status" : "testing",
-   "version" : "1.7_0004"
+   "version" : "1.7_0005"
 }
